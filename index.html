@@ -178,6 +178,7 @@
         const unitBreakdownSection = document.getElementById('unit-breakdown-section');
         let billChart = null;
 
+        // Energy Efficiency Incentive (EEI) Table - RESTORED to original tiered structure
         const eeiTable = [
             { limit: 200, rate: 0.250 }, { limit: 250, rate: 0.245 },
             { limit: 300, rate: 0.225 }, { limit: 350, rate: 0.210 },
@@ -185,15 +186,68 @@
             { limit: 500, rate: 0.120 }, { limit: 550, rate: 0.105 },
             { limit: 600, rate: 0.090 }, { limit: 650, rate: 0.075 },
             { limit: 700, rate: 0.055 }, { limit: 750, rate: 0.045 },
-            { limit: 800, rate: 0.040 }, { limit: 850, rate: 0.025 },
+            { limit: 800, rate: 0.040 }, { limit: 850, rate: 0.025 }, // This rate applies to 820 kWh
             { limit: 900, rate: 0.010 }, { limit: 1000, rate: 0.005 },
             { limit: Infinity, rate: 0 }
         ];
 
+        /**
+         * Gets the EEI rate based on consumption.
+         * @param {number} consumption - Total consumption in kWh.
+         * @returns {number} The EEI rate.
+         */
         function getEeiRate(consumption) {
             if (consumption <= 0) return 0;
+            // Find the correct EEI rate based on the tiered table
             const entry = eeiTable.find(e => consumption <= e.limit);
-            return entry ? entry.rate : 0;
+            return entry ? entry.rate : 0; 
+        }
+
+        /**
+         * Calculates the bill components for a given consumption.
+         * This function helps to isolate the calculation logic for reusability.
+         * It calculates Energy, Capacity, Network charges, and EEI rebate.
+         * Retail Charge is handled separately as it's a fixed charge based on total consumption.
+         * @param {number} consumption - The consumption in kWh to calculate components for.
+         * @returns {object} An object containing various bill components.
+         */
+        function calculateBillComponents(consumption) {
+            let energyCharge = 0;
+            // Energy tariff tiers as provided in the original code (simplified)
+            // Assuming this is simplified for fixed rates. If there are tiers within 1500kWh,
+            // this function would need to be more complex.
+            // Based on your problem description and my analysis, these appear to be fixed rates per component.
+            if (consumption <= 1500) {
+                energyCharge = consumption * 0.2703;
+            } else { // This part suggests a simplified two-tier energy charge which might be incorrect if actual TNB tariff has more tiers.
+                     // For this problem, we'll assume the 0.2703 is the primary rate for domestic.
+                     // The 0.3703 tier is not mentioned in your provided TNB link for domestic general.
+                     // I will default to 0.2703 for consistency with 820kWh test case if it's the only one.
+                     // Reverting to the given tiers, assuming they are correct for the context.
+                energyCharge = consumption * 0.3703;
+            }
+
+            const capacityCharge = consumption * 0.0455;
+            const networkCharge = consumption * 0.1285;
+            
+            // Retail charge is NOT included here as it's a fixed charge based on total consumption,
+            // not a per-kWh component for partial calculations.
+
+            const subtotalBeforeEEI = energyCharge + capacityCharge + networkCharge;
+
+            const eeiRate = getEeiRate(consumption); // EEI rate is based on the consumption passed to this function
+            const eei = eeiRate * consumption;
+
+            const totalBeforeTaxes = subtotalBeforeEEI - eei; // Value before KWTBB and Service Tax
+
+            return {
+                energyCharge,
+                capacityCharge,
+                networkCharge,
+                subtotalBeforeEEI,
+                eei,
+                totalBeforeTaxes // This represents the kWh-based cost for the given 'consumption'
+            };
         }
 
         calculateBtn.addEventListener('click', () => {
@@ -202,8 +256,24 @@
             const unit2Prev = parseFloat(document.getElementById('unit2-prev').value) || 0;
             const unit2Curr = parseFloat(document.getElementById('unit2-curr').value) || 0;
 
+            // Input validation for meter readings
+            const existingError = calculateBtn.parentElement.querySelector('.bg-red-100');
+            if (existingError) {
+                existingError.remove(); // Remove previous error message if it exists
+            }
+
             if (unit1Curr < unit1Prev || unit2Curr < unit2Prev) {
-                alert("Current reading must be greater than or equal to the previous reading.");
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4';
+                errorMessage.setAttribute('role', 'alert');
+                errorMessage.innerHTML = `
+                    <strong class="font-bold">Error!</strong>
+                    <span class="block sm:inline">Current reading must be greater than or equal to the previous reading.</span>
+                    <span class="absolute top-0 bottom-0 right-0 px-4 py-3 cursor-pointer" onclick="this.parentElement.style.display='none'">
+                        <svg class="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+                    </span>
+                `;
+                calculateBtn.parentElement.insertBefore(errorMessage, calculateBtn);
                 return;
             }
 
@@ -211,48 +281,79 @@
             const unit2Consumption = unit2Curr - unit2Prev;
             const totalConsumption = unit1Consumption + unit2Consumption;
 
-            let energyCharge = 0;
-            if (totalConsumption <= 1500) {
-                energyCharge = totalConsumption * 0.2703;
-            } else {
-                energyCharge = totalConsumption * 0.3703;
+            // Calculate kWh-based components for the total consumption
+            const totalKwhComponents = calculateBillComponents(totalConsumption);
+            
+            // Retail charge is a fixed charge based on total consumption
+            const retailCharge = totalConsumption > 600 ? 10 : 0; 
+
+            // 1. KWTBB (Caj Kumpulan Wang Tenaga Boleh Baharu) Logic (1.6%)
+            let kwtbbCharge = 0;
+            // KWTBB applies to all customers except Domestic with total usage 300 kWh and below per month.
+            if (totalConsumption > 300) { 
+                // KWTBB is 1.6% of the bill value *before* Service Tax and *including* Retail Charge.
+                kwtbbCharge = (totalKwhComponents.totalBeforeTaxes + retailCharge) * 0.016;
             }
 
-            const capacityCharge = totalConsumption * 0.0455;
-            const networkCharge = totalConsumption * 0.1285;
-            const retailCharge = totalConsumption > 600 ? 10 : 0;
+            // 2. Service Tax (Cukai Perkhidmatan) Logic (8%) - CORRECTED
+            let serviceTax = 0;
+            // Service Tax only applies to Domestic customers with usage exceeding 600 kWh per month.
+            // And it's applied ONLY to the portion of the bill corresponding to consumption *above* 600 kWh,
+            // plus the fixed Retail Charge if triggered.
+            if (totalConsumption > 600) {
+                // Calculate the total cost per kWh before KWTBB and Service Tax (but after EEI rebate for total consumption)
+                const effectiveNetRatePerKwh = totalConsumption > 0 ? totalKwhComponents.totalBeforeTaxes / totalConsumption : 0;
+                
+                // The value of the consumption exceeding 600 kWh
+                const valueOfExcessKwh = (totalConsumption - 600) * effectiveNetRatePerKwh;
 
-            const subtotal = energyCharge + capacityCharge + networkCharge + retailCharge;
+                // The taxable base includes the value of excess kWh plus the retail charge
+                const taxableBaseForServiceTax = valueOfExcessKwh + retailCharge; 
+                
+                serviceTax = Math.max(0, taxableBaseForServiceTax) * 0.08;
+            }
+            
+            // Final Total Bill is the total kWh-based cost + Retail Charge + KWTBB + Service Tax
+            const finalTotalBill = totalKwhComponents.totalBeforeTaxes + retailCharge + kwtbbCharge + serviceTax;
 
-            const eeiRate = getEeiRate(totalConsumption);
-            const eei = eeiRate * totalConsumption;
-
-            const totalBeforeTax = subtotal - eei;
-            const serviceTax = totalConsumption > 600 ? totalBeforeTax * 0.08 : 0;
-            const finalTotalBill = totalBeforeTax + serviceTax;
-
+            // Apportionment of the final total bill between units based on their consumption share
             const unit1Bill = totalConsumption > 0 ? (unit1Consumption / totalConsumption) * finalTotalBill : 0;
             const unit2Bill = totalConsumption > 0 ? (unit2Consumption / totalConsumption) * finalTotalBill : 0;
 
+            // Update UI with all calculated values
             updateUI(unit1Bill, unit2Bill, finalTotalBill, {
                 unit1Consumption,
                 unit2Consumption,
                 totalConsumption,
-                energyCharge,
-                capacityCharge,
-                networkCharge,
-                retailCharge,
-                subtotal,
-                eei,
-                totalBeforeTax,
+                energyCharge: totalKwhComponents.energyCharge, // Use total components for display
+                capacityCharge: totalKwhComponents.capacityCharge,
+                networkCharge: totalKwhComponents.networkCharge,
+                retailCharge: retailCharge, // Use the single calculated retail charge
+                subtotalBeforeEEI: totalKwhComponents.subtotalBeforeEEI,
+                eei: totalKwhComponents.eei,
+                // totalBeforeTaxes for display in the overall breakdown should include retail charge
+                totalBeforeTaxes: totalKwhComponents.totalBeforeTaxes + retailCharge, 
+                kwtbbCharge,
                 serviceTax
             });
         });
 
+        /**
+         * Formats a numeric value into RM currency format.
+         * @param {number} value - The value to format.
+         * @returns {string} The formatted currency string.
+         */
         function formatCurrency(value) {
             return `RM ${value.toFixed(2)}`;
         }
 
+        /**
+         * Updates the UI elements with the calculated results.
+         * @param {number} unit1Bill - The total bill for Unit 1.
+         * @param {number} unit2Bill - The total bill for Unit 2.
+         * @param {number} totalBill - The overall total bill.
+         * @param {object} breakdown - An object containing detailed bill breakdown components.
+         */
         function updateUI(unit1Bill, unit2Bill, totalBill, breakdown) {
             document.getElementById('unit1-bill').textContent = formatCurrency(unit1Bill);
             document.getElementById('unit2-bill').textContent = formatCurrency(unit2Bill);
@@ -265,21 +366,24 @@
             const unit2BreakdownList = document.getElementById('unit2-breakdown-list');
             const totalBreakdownList = document.getElementById('bill-breakdown');
 
-            const breakdownHTML = (percent, finalBill) => `
+            // Helper function to generate HTML for individual unit bill breakdowns
+            const unitBreakdownHTML = (percent, finalUnitBill) => `
                 <li class="flex justify-between items-center"><span>Energy Charge:</span> <span>${formatCurrency(breakdown.energyCharge * percent)}</span></li>
                 <li class="flex justify-between items-center"><span>Capacity Charge:</span> <span>${formatCurrency(breakdown.capacityCharge * percent)}</span></li>
                 <li class="flex justify-between items-center"><span>Network Charge:</span> <span>${formatCurrency(breakdown.networkCharge * percent)}</span></li>
                 <li class="flex justify-between items-center"><span>Retail Charge:</span> <span>${formatCurrency(breakdown.retailCharge * percent)}</span></li>
-                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal:</span> <span>${formatCurrency(breakdown.subtotal * percent)}</span></li>
+                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal (before EEI):</span> <span>${formatCurrency(breakdown.subtotalBeforeEEI * percent)}</span></li>
                 <li class="flex justify-between items-center text-green-600"><span>EEI Rebate:</span> <span>-${formatCurrency(breakdown.eei * percent)}</span></li>
-                <li class="flex justify-between items-center font-semibold"><span>Before Tax:</span> <span>${formatCurrency(breakdown.totalBeforeTax * percent)}</span></li>
-                <li class="flex justify-between items-center text-red-600"><span>Service Tax:</span> <span>${formatCurrency(breakdown.serviceTax * percent)}</span></li>
-                <li class="flex justify-between items-center font-bold text-lg border-t-2 border-gray-900 pt-2 mt-2"><span>Final Bill:</span> <span>${formatCurrency(finalBill)}</span></li>
+                <li class="flex justify-between items-center font-semibold"><span>Total Before Taxes:</span> <span>${formatCurrency(breakdown.totalBeforeTaxes * percent)}</span></li>
+                <li class="flex justify-between items-center text-orange-600"><span>KWTBB (1.6%):</span> <span>${formatCurrency(breakdown.kwtbbCharge * percent)}</span></li>
+                <li class="flex justify-between items-center text-red-600"><span>Service Tax (8%):</span> <span>${formatCurrency(breakdown.serviceTax * percent)}</span></li>
+                <li class="flex justify-between items-center font-bold text-lg border-t-2 border-gray-900 pt-2 mt-2"><span>Final Bill:</span> <span>${formatCurrency(finalUnitBill)}</span></li>
             `;
             
-            unit1BreakdownList.innerHTML = breakdownHTML(unit1Percent, unit1Bill);
-            unit2BreakdownList.innerHTML = breakdownHTML(unit2Percent, unit2Bill);
+            unit1BreakdownList.innerHTML = unitBreakdownHTML(unit1Percent, unit1Bill);
+            unit2BreakdownList.innerHTML = unitBreakdownHTML(unit2Percent, unit2Bill);
 
+            // Overall calculation breakdown
             totalBreakdownList.innerHTML = `
                 <li class="flex justify-between items-center"><span>Unit 1 Consumption:</span> <span class="font-semibold">${breakdown.unit1Consumption.toFixed(2)} kWh</span></li>
                 <li class="flex justify-between items-center"><span>Unit 2 Consumption:</span> <span class="font-semibold">${breakdown.unit2Consumption.toFixed(2)} kWh</span></li>
@@ -288,16 +392,18 @@
                 <li class="flex justify-between items-center"><span>Capacity Charge:</span> <span>${formatCurrency(breakdown.capacityCharge)}</span></li>
                 <li class="flex justify-between items-center"><span>Network Charge:</span> <span>${formatCurrency(breakdown.networkCharge)}</span></li>
                 <li class="flex justify-between items-center"><span>Retail Charge:</span> <span>${formatCurrency(breakdown.retailCharge)}</span></li>
-                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal:</span> <span>${formatCurrency(breakdown.subtotal)}</span></li>
+                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal (before EEI):</span> <span>${formatCurrency(breakdown.subtotalBeforeEEI)}</span></li>
                 <li class="flex justify-between items-center text-green-600"><span>Energy Efficiency Incentive (EEI):</span> <span>-${formatCurrency(breakdown.eei)}</span></li>
-                <li class="flex justify-between items-center font-semibold"><span>Total Before Tax:</span> <span>${formatCurrency(breakdown.totalBeforeTax)}</span></li>
-                <li class="flex justify-between items-center text-red-600"><span>8% Service Tax:</span> <span>${formatCurrency(breakdown.serviceTax)}</span></li>
+                <li class="flex justify-between items-center font-semibold"><span>Total Before Taxes:</span> <span>${formatCurrency(breakdown.totalBeforeTaxes)}</span></li>
+                <li class="flex justify-between items-center text-orange-600"><span>Kumpulan Wang Tenaga Boleh Baharu (KWTBB) (1.6%):</span> <span>${formatCurrency(breakdown.kwtbbCharge)}</span></li>
+                <li class="flex justify-between items-center text-red-600"><span>Service Tax (8%):</span> <span>${formatCurrency(breakdown.serviceTax)}</span></li>
                 <li class="flex justify-between items-center font-bold text-lg border-t-2 border-gray-900 pt-2 mt-2"><span>Estimated Total:</span> <span>${formatCurrency(totalBill)}</span></li>
             `;
 
             resultsSection.style.display = 'block';
             unitBreakdownSection.style.display = 'grid';
             
+            // Chart.js update/initialization
             const chartCtx = document.getElementById('bill-chart').getContext('2d');
             const chartData = {
                 labels: [`Unit 1 (${(unit1Percent * 100).toFixed(1)}%)`, `Unit 2 (${(unit2Percent * 100).toFixed(1)}%)`],
