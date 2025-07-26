@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive TNB Dual-Key Bill Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: A single-page dashboard layout is chosen for its directness and usability. The user flow is linear: 1. Input meter readings for two units. 2. Press "Calculate". 3. View results. The results are split into clear sections: a summary, individual unit breakdowns, the total calculation, and a visual chart. This task-oriented design makes it incredibly simple for a user to get the specific information they need without navigating complex menus. The structure prioritizes immediate answers and clarity. -->
+    <!-- Visualization & Content Choices: Report Info: Bill components (Energy, Capacity, etc.), Apportionment logic. -> Goal: Compare costs and understand bill composition at both total and individual levels. -> Viz/Presentation Method: Key figures in summary cards. Detailed calculations in tables for transparency (total and per-unit). A dynamic donut chart (Chart.js) visualizes the final cost proportion. -> Interaction: Users input numbers, a button triggers calculation, all result sections and the chart update dynamically. -> Justification: This multi-layered approach serves different user needs: quick answers (summary), proof (total calculation), individual accountability (unit breakdowns), and visual summary (chart). -> Library/Method: Chart.js for the donut chart. Vanilla JS for calculations. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            padding: 1.5rem;
+            transition: all 0.3s ease-in-out;
+            display: flex;
+            flex-direction: column;
+        }
+        .btn-primary {
+            background-color: #3b82f6;
+            color: white;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-7xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">TNB Dual-Key Bill Calculator</h1>
+            <p class="mt-2 text-md text-gray-600">Estimate your monthly electricity bill based on the TNB tariff structure effective July 1, 2025.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="lg:col-span-1">
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2">1. Enter Meter Readings</h2>
+                    <p class="text-sm text-gray-500 mb-6">Input the previous and current meter readings (in kWh) for each of your units to calculate their individual consumption.</p>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="font-semibold text-lg mb-3 text-blue-600">Unit 1</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label for="unit1-prev" class="block text-sm font-medium text-gray-700">Previous Reading (kWh)</label>
+                                    <input type="number" id="unit1-prev" class="input-field mt-1" placeholder="e.g., 10000">
+                                </div>
+                                <div>
+                                    <label for="unit1-curr" class="block text-sm font-medium text-gray-700">Current Reading (kWh)</label>
+                                    <input type="number" id="unit1-curr" class="input-field mt-1" placeholder="e.g., 10500">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h3 class="font-semibold text-lg mb-3 text-green-600">Unit 2</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <label for="unit2-prev" class="block text-sm font-medium text-gray-700">Previous Reading (kWh)</label>
+                                    <input type="number" id="unit2-prev" class="input-field mt-1" placeholder="e.g., 8000">
+                                </div>
+                                <div>
+                                    <label for="unit2-curr" class="block text-sm font-medium text-gray-700">Current Reading (kWh)</label>
+                                    <input type="number" id="unit2-curr" class="input-field mt-1" placeholder="e.g., 8300">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="calculate-btn" class="btn-primary w-full mt-8">Calculate Bill</button>
+                </div>
+            </div>
+
+            <div id="results-section" class="lg:col-span-2 space-y-8" style="display: none;">
+                <div class="card">
+                    <h2 class="text-xl font-semibold mb-4 border-b pb-2">2. Estimated Bill Summary</h2>
+                     <p class="text-sm text-gray-500 mb-6">Here is the estimated total bill and how it's divided between your two units. This provides a quick overview of the final costs.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <p class="text-sm text-blue-800 font-medium">Unit 1 Bill</p>
+                            <p id="unit1-bill" class="text-2xl font-bold text-blue-900">RM 0.00</p>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <p class="text-sm text-green-800 font-medium">Unit 2 Bill</p>
+                            <p id="unit2-bill" class="text-2xl font-bold text-green-900">RM 0.00</p>
+                        </div>
+                        <div class="bg-gray-100 p-4 rounded-lg border border-gray-200">
+                            <p class="text-sm text-gray-800 font-medium">Total Estimated Bill</p>
+                            <p id="total-bill" class="text-2xl font-bold text-gray-900">RM 0.00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="unit-breakdown-section" class="grid grid-cols-1 md:grid-cols-2 gap-8" style="display: none;">
+                    <div class="card">
+                        <h2 class="text-xl font-semibold mb-4 border-b pb-2 text-blue-600">3. Unit 1 Bill Breakdown</h2>
+                        <p class="text-sm text-gray-500 mb-6">Each component of the total bill is prorated based on this unit's share of the total consumption.</p>
+                        <ul id="unit1-breakdown-list" class="space-y-3 text-sm"></ul>
+                    </div>
+                    <div class="card">
+                        <h2 class="text-xl font-semibold mb-4 border-b pb-2 text-green-600">4. Unit 2 Bill Breakdown</h2>
+                        <p class="text-sm text-gray-500 mb-6">Each component of the total bill is prorated based on this unit's share of the total consumption.</p>
+                        <ul id="unit2-breakdown-list" class="space-y-3 text-sm"></ul>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="card">
+                        <h2 class="text-xl font-semibold mb-4 border-b pb-2">5. Overall Calculation</h2>
+                        <p class="text-sm text-gray-500 mb-6">The total bill is calculated based on the combined usage of both units, according to the official tariff components.</p>
+                        <ul id="bill-breakdown" class="space-y-3 text-sm">
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h2 class="text-xl font-semibold mb-4 border-b pb-2">6. Cost Apportionment</h2>
+                         <p class="text-sm text-gray-500 mb-6">This chart visualizes how the final bill is split between the two units, based on their consumption.</p>
+                        <div class="chart-container">
+                            <canvas id="bill-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        const calculateBtn = document.getElementById('calculate-btn');
+        const resultsSection = document.getElementById('results-section');
+        const unitBreakdownSection = document.getElementById('unit-breakdown-section');
+        let billChart = null;
+
+        const eeiTable = [
+            { limit: 200, rate: 0.250 }, { limit: 250, rate: 0.245 },
+            { limit: 300, rate: 0.225 }, { limit: 350, rate: 0.210 },
+            { limit: 400, rate: 0.170 }, { limit: 450, rate: 0.145 },
+            { limit: 500, rate: 0.120 }, { limit: 550, rate: 0.105 },
+            { limit: 600, rate: 0.090 }, { limit: 650, rate: 0.075 },
+            { limit: 700, rate: 0.055 }, { limit: 750, rate: 0.045 },
+            { limit: 800, rate: 0.040 }, { limit: 850, rate: 0.025 },
+            { limit: 900, rate: 0.010 }, { limit: 1000, rate: 0.005 },
+            { limit: Infinity, rate: 0 }
+        ];
+
+        function getEeiRate(consumption) {
+            if (consumption <= 0) return 0;
+            const entry = eeiTable.find(e => consumption <= e.limit);
+            return entry ? entry.rate : 0;
+        }
+
+        calculateBtn.addEventListener('click', () => {
+            const unit1Prev = parseFloat(document.getElementById('unit1-prev').value) || 0;
+            const unit1Curr = parseFloat(document.getElementById('unit1-curr').value) || 0;
+            const unit2Prev = parseFloat(document.getElementById('unit2-prev').value) || 0;
+            const unit2Curr = parseFloat(document.getElementById('unit2-curr').value) || 0;
+
+            if (unit1Curr < unit1Prev || unit2Curr < unit2Prev) {
+                alert("Current reading must be greater than or equal to the previous reading.");
+                return;
+            }
+
+            const unit1Consumption = unit1Curr - unit1Prev;
+            const unit2Consumption = unit2Curr - unit2Prev;
+            const totalConsumption = unit1Consumption + unit2Consumption;
+
+            let energyCharge = 0;
+            if (totalConsumption <= 1500) {
+                energyCharge = totalConsumption * 0.2703;
+            } else {
+                energyCharge = totalConsumption * 0.3703;
+            }
+
+            const capacityCharge = totalConsumption * 0.0455;
+            const networkCharge = totalConsumption * 0.1285;
+            const retailCharge = totalConsumption > 600 ? 10 : 0;
+
+            const subtotal = energyCharge + capacityCharge + networkCharge + retailCharge;
+
+            const eeiRate = getEeiRate(totalConsumption);
+            const eei = eeiRate * totalConsumption;
+
+            const totalBeforeTax = subtotal - eei;
+            const serviceTax = totalConsumption > 600 ? totalBeforeTax * 0.08 : 0;
+            const finalTotalBill = totalBeforeTax + serviceTax;
+
+            const unit1Bill = totalConsumption > 0 ? (unit1Consumption / totalConsumption) * finalTotalBill : 0;
+            const unit2Bill = totalConsumption > 0 ? (unit2Consumption / totalConsumption) * finalTotalBill : 0;
+
+            updateUI(unit1Bill, unit2Bill, finalTotalBill, {
+                unit1Consumption,
+                unit2Consumption,
+                totalConsumption,
+                energyCharge,
+                capacityCharge,
+                networkCharge,
+                retailCharge,
+                subtotal,
+                eei,
+                totalBeforeTax,
+                serviceTax
+            });
+        });
+
+        function formatCurrency(value) {
+            return `RM ${value.toFixed(2)}`;
+        }
+
+        function updateUI(unit1Bill, unit2Bill, totalBill, breakdown) {
+            document.getElementById('unit1-bill').textContent = formatCurrency(unit1Bill);
+            document.getElementById('unit2-bill').textContent = formatCurrency(unit2Bill);
+            document.getElementById('total-bill').textContent = formatCurrency(totalBill);
+            
+            const unit1Percent = breakdown.totalConsumption > 0 ? breakdown.unit1Consumption / breakdown.totalConsumption : 0;
+            const unit2Percent = breakdown.totalConsumption > 0 ? breakdown.unit2Consumption / breakdown.totalConsumption : 0;
+
+            const unit1BreakdownList = document.getElementById('unit1-breakdown-list');
+            const unit2BreakdownList = document.getElementById('unit2-breakdown-list');
+            const totalBreakdownList = document.getElementById('bill-breakdown');
+
+            const breakdownHTML = (percent, finalBill) => `
+                <li class="flex justify-between items-center"><span>Energy Charge:</span> <span>${formatCurrency(breakdown.energyCharge * percent)}</span></li>
+                <li class="flex justify-between items-center"><span>Capacity Charge:</span> <span>${formatCurrency(breakdown.capacityCharge * percent)}</span></li>
+                <li class="flex justify-between items-center"><span>Network Charge:</span> <span>${formatCurrency(breakdown.networkCharge * percent)}</span></li>
+                <li class="flex justify-between items-center"><span>Retail Charge:</span> <span>${formatCurrency(breakdown.retailCharge * percent)}</span></li>
+                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal:</span> <span>${formatCurrency(breakdown.subtotal * percent)}</span></li>
+                <li class="flex justify-between items-center text-green-600"><span>EEI Rebate:</span> <span>-${formatCurrency(breakdown.eei * percent)}</span></li>
+                <li class="flex justify-between items-center font-semibold"><span>Before Tax:</span> <span>${formatCurrency(breakdown.totalBeforeTax * percent)}</span></li>
+                <li class="flex justify-between items-center text-red-600"><span>Service Tax:</span> <span>${formatCurrency(breakdown.serviceTax * percent)}</span></li>
+                <li class="flex justify-between items-center font-bold text-lg border-t-2 border-gray-900 pt-2 mt-2"><span>Final Bill:</span> <span>${formatCurrency(finalBill)}</span></li>
+            `;
+            
+            unit1BreakdownList.innerHTML = breakdownHTML(unit1Percent, unit1Bill);
+            unit2BreakdownList.innerHTML = breakdownHTML(unit2Percent, unit2Bill);
+
+            totalBreakdownList.innerHTML = `
+                <li class="flex justify-between items-center"><span>Unit 1 Consumption:</span> <span class="font-semibold">${breakdown.unit1Consumption.toFixed(2)} kWh</span></li>
+                <li class="flex justify-between items-center"><span>Unit 2 Consumption:</span> <span class="font-semibold">${breakdown.unit2Consumption.toFixed(2)} kWh</span></li>
+                <li class="flex justify-between items-center font-bold border-t pt-2 mt-2"><span>Total Consumption:</span> <span>${breakdown.totalConsumption.toFixed(2)} kWh</span></li>
+                <li class="flex justify-between items-center pt-4"><span>Energy Charge:</span> <span>${formatCurrency(breakdown.energyCharge)}</span></li>
+                <li class="flex justify-between items-center"><span>Capacity Charge:</span> <span>${formatCurrency(breakdown.capacityCharge)}</span></li>
+                <li class="flex justify-between items-center"><span>Network Charge:</span> <span>${formatCurrency(breakdown.networkCharge)}</span></li>
+                <li class="flex justify-between items-center"><span>Retail Charge:</span> <span>${formatCurrency(breakdown.retailCharge)}</span></li>
+                <li class="flex justify-between items-center font-semibold border-t pt-2 mt-2"><span>Subtotal:</span> <span>${formatCurrency(breakdown.subtotal)}</span></li>
+                <li class="flex justify-between items-center text-green-600"><span>Energy Efficiency Incentive (EEI):</span> <span>-${formatCurrency(breakdown.eei)}</span></li>
+                <li class="flex justify-between items-center font-semibold"><span>Total Before Tax:</span> <span>${formatCurrency(breakdown.totalBeforeTax)}</span></li>
+                <li class="flex justify-between items-center text-red-600"><span>8% Service Tax:</span> <span>${formatCurrency(breakdown.serviceTax)}</span></li>
+                <li class="flex justify-between items-center font-bold text-lg border-t-2 border-gray-900 pt-2 mt-2"><span>Estimated Total:</span> <span>${formatCurrency(totalBill)}</span></li>
+            `;
+
+            resultsSection.style.display = 'block';
+            unitBreakdownSection.style.display = 'grid';
+            
+            const chartCtx = document.getElementById('bill-chart').getContext('2d');
+            const chartData = {
+                labels: [`Unit 1 (${(unit1Percent * 100).toFixed(1)}%)`, `Unit 2 (${(unit2Percent * 100).toFixed(1)}%)`],
+                datasets: [{
+                    data: [unit1Bill, unit2Bill],
+                    backgroundColor: ['#3b82f6', '#16a34a'],
+                    borderColor: '#f9fafb',
+                    borderWidth: 4,
+                    hoverOffset: 8
+                }]
+            };
+
+            if (billChart) {
+                billChart.data = chartData;
+                billChart.update();
+            } else {
+                billChart = new Chart(chartCtx, {
+                    type: 'doughnut',
+                    data: chartData,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '60%',
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    padding: 20,
+                                    font: {
+                                        size: 14,
+                                        family: 'Inter'
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed !== null) {
+                                            label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'MYR' }).format(context.parsed);
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>
